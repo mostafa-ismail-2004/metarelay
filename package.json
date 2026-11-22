@@ -1,0 +1,33 @@
+{
+  "name": "metarelay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first workspace and MCP proxy for shared agent tools, memory, and workflows.",
+  "type": "module",
+  "workspaces": [
+    "console"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:all": "tsc && npm --workspace console run build",
+    "start": "node dist/mcp/server.js",
+    "dev": "tsc && node dist/mcp/server.js",
+    "dev:console": "npm --workspace console run dev",
+    "test": "tsc && node --test dist/mcp/__tests__/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/fastify": "2.0.1",
+    "@modelcontextprotocol/server": "2.4.0",
+    "fastify": "5.12.8",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

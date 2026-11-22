@@ -1,0 +1,19 @@
+# MetaRelay default configuration (shipped with the codebase).
+# To override per-user without editing tracked files, create ~/metarelay/config.yml
+# or set METARELAY_* environment variables.
+
+server:
+  host: 127.0.0.1
+  port: 3847
+
+console:
+  host: 127.0.0.1
+  port: 5173
+
+storage:
+  home: ~/metarelay
+
+harnesses:
+  # Automatically update the `metarelay` MCP URL in detected harnesses on daemon start
+  # so changing server.port keeps Codex, Claude Code, OpenClaw, and Antigravity in sync.
+  autoSyncOnStart: true

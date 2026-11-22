@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node"],
+    "strict": true,
+    "noEmitOnError": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "mcp/**/*.ts",
+    "memory/**/*.ts",
+    "workflows/**/*.ts",
+    "skills/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "console"
+  ]
+}
