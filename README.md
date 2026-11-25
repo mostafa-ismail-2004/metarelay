@@ -7,6 +7,8 @@ A lightweight, local-first workspace for people who use multiple AI agent harnes
 ```text
 metarelay/
 ├── config.yml         # Shipped default ports, paths, and harness sync settings
+├── cli/               # Cross-platform CLI (Linux/macOS/Windows) + tab completion
+│   └── docs/          # Detailed CLI documentation
 ├── mcp/               # Shared MCP Proxy daemon, OAuth 2.1, harness auto-sync
 │   └── docs/          # Detailed MCP Proxy documentation
 ├── console/           # Web Console (Vite + React + TypeScript, Light/Dark/System)
@@ -39,5 +41,6 @@ When `harnesses.autoSyncOnStart` is enabled, starting MetaRelay automatically up
 
 ## Feature Documentation
 
+- [CLI (`cli/docs/README.md`)](./cli/docs/README.md)
 - [MCP Proxy (`mcp/docs/README.md`)](./mcp/docs/README.md)
 - [Web Console (`console/docs/README.md`)](./console/docs/README.md)

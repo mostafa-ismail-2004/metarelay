@@ -4,6 +4,9 @@
   "private": true,
   "description": "Local-first workspace and MCP proxy for shared agent tools, memory, and workflows.",
   "type": "module",
+  "bin": {
+    "metarelay": "./dist/cli/index.js"
+  },
   "workspaces": [
     "console"
   ],
@@ -16,7 +19,8 @@
     "start": "node dist/mcp/server.js",
     "dev": "tsc && node dist/mcp/server.js",
     "dev:console": "npm --workspace console run dev",
-    "test": "tsc && node --test dist/mcp/__tests__/*.test.js"
+    "cli": "node dist/cli/index.js",
+    "test": "tsc && node --test dist/mcp/__tests__/*.test.js dist/cli/__tests__/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
