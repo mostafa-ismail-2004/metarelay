@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -7,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { mountManagementApi } from "./api.js";
 import { resolveConfig, type MetaRelayConfig } from "./config.js";
 import {
+  removeRuntimeState,
   syncAllHarnesses,
   writeRuntimeState,
   type HarnessSyncResult,
@@ -80,6 +82,7 @@ export async function createMetaRelayDaemon(options?: {
 
   const upstreams = new UpstreamManager(config, registry, secrets);
   const proxy = new MetaRelayProxyServer(upstreams);
+  const instanceId = crypto.randomUUID();
   let lastHarnessSync: HarnessSyncResult[] = [];
 
   const app = createMcpFastifyApp({
@@ -89,6 +92,7 @@ export async function createMetaRelayDaemon(options?: {
   proxy.mount(app);
   mountManagementApi(app, {
     config,
+    instanceId,
     registry,
     upstreams,
     proxy,
@@ -96,6 +100,7 @@ export async function createMetaRelayDaemon(options?: {
     syncHarnessesNow: async () => {
       lastHarnessSync = await syncAllHarnesses(`${config.baseUrl}/mcp`);
       await writeRuntimeState(config.runtimeFile, {
+        instanceId,
         pid: process.pid,
         host: config.host,
         port: config.port,
@@ -135,6 +140,7 @@ export async function createMetaRelayDaemon(options?: {
         lastHarnessSync = await syncAllHarnesses(`${config.baseUrl}/mcp`);
       }
       await writeRuntimeState(config.runtimeFile, {
+        instanceId,
         pid: process.pid,
         host: config.host,
         port: config.port,
@@ -153,6 +159,7 @@ export async function createMetaRelayDaemon(options?: {
       app.server.closeIdleConnections?.();
       app.server.closeAllConnections?.();
       await app.close();
+      await removeRuntimeState(config.runtimeFile);
       started = false;
     },
   };

@@ -3,7 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runCli } from "../commands.js";
+import { resolveVerifiedBaseUrl, runCli } from "../commands.js";
+import { resolveConfig } from "../../mcp/config.js";
+import { writeRuntimeState } from "../../mcp/harness-sync.js";
+import { createMetaRelayDaemon } from "../../mcp/server.js";
 import { completeArgs, generateCompletionScript } from "../completion.js";
 import {
   buildOpenUrlCommand,
@@ -188,13 +191,30 @@ test("CLI commands: completion scripts, offline mcp add/list/__complete/remove, 
     assert.equal(await runCli(["mcp", "list"], listCap.io), 0);
     assert.match(listCap.getOut(), /linear/);
 
-    // 5. mcp auth opens browser with authorizeUrl from daemon
+    // 5. mcp auth opens browser with authorizeUrl from verified live daemon
     let openedUrl = "";
-    const mockAuthFetch: typeof fetch = async () =>
-      new Response(JSON.stringify({ authorizeUrl: "https://auth.linear.app/authorize?x=1" }), {
+    const cfgForAuth = resolveConfig({ homeDir: home, port: 59999 });
+    await writeRuntimeState(cfgForAuth.runtimeFile, {
+      instanceId: "test-inst-1",
+      pid: process.pid,
+      host: "127.0.0.1",
+      port: 59999,
+      mcpEndpoint: "http://127.0.0.1:59999/mcp",
+      harnesses: [],
+    });
+    const mockAuthFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/health")) {
+        return new Response(
+          JSON.stringify({ ok: true, service: "metarelay", instanceId: "test-inst-1" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ authorizeUrl: "https://auth.linear.app/authorize?x=1" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
+    };
     const authCap = createCaptureIo({
       fetchImpl: mockAuthFetch,
       openBrowser: async (u) => {
@@ -204,6 +224,7 @@ test("CLI commands: completion scripts, offline mcp add/list/__complete/remove, 
     });
     assert.equal(await runCli(["mcp", "auth", "linear"], authCap.io), 0);
     assert.equal(openedUrl, "https://auth.linear.app/authorize?x=1");
+    await fs.unlink(cfgForAuth.runtimeFile);
 
     // 6. mcp remove linear cleans it up
     const rmCap = createCaptureIo({
@@ -213,6 +234,52 @@ test("CLI commands: completion scripts, offline mcp add/list/__complete/remove, 
     assert.equal(await runCli(["mcp", "remove", "linear"], rmCap.io), 0);
     assert.match(rmCap.getOut(), /Removed MCP server "linear"/);
   } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Runtime discovery verifies live daemon port via instanceId and rejects stale/lying runtime.json", async () => {
+  const home = await makeTempHome();
+  const daemon = await createMetaRelayDaemon({
+    homeDir: home,
+    port: 0, // ephemeral port different from config.yml's 3847
+    watchRegistry: false,
+    serveConsole: false,
+    syncHarnesses: false,
+  });
+
+  try {
+    await daemon.start();
+    const livePort = daemon.config.port;
+    assert.notEqual(livePort, 3847);
+
+    // CLI configured with default port 3847 still discovers the live daemon on livePort via runtime.json
+    const statusCap = createCaptureIo({
+      configOverrides: { homeDir: home, port: 3847 },
+    });
+    assert.equal(await runCli(["status", "--json"], statusCap.io), 0);
+    const statusJson = JSON.parse(statusCap.getOut()) as { ok: boolean; mcpEndpoint: string };
+    assert.equal(statusJson.ok, true);
+    assert.equal(statusJson.mcpEndpoint, `http://127.0.0.1:${livePort}/mcp`);
+
+    // Lying runtime.json (wrong instanceId — e.g. another process or stale restart) is rejected
+    const cfg = resolveConfig({ homeDir: home, port: 3847 });
+    await writeRuntimeState(cfg.runtimeFile, {
+      instanceId: "forged-stale-id",
+      pid: process.pid,
+      host: "127.0.0.1",
+      port: livePort,
+      mcpEndpoint: `http://127.0.0.1:${livePort}/mcp`,
+      harnesses: [],
+    });
+    const rejected = await resolveVerifiedBaseUrl(cfg, fetch);
+    assert.equal(rejected, null);
+
+    // Clean stop removes runtime.json
+    await daemon.stop();
+    await assert.rejects(() => fs.stat(cfg.runtimeFile));
+  } finally {
+    await daemon.stop().catch(() => {});
     await fs.rm(home, { recursive: true, force: true });
   }
 });

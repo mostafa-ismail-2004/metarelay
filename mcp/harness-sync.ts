@@ -257,18 +257,50 @@ export async function syncAllHarnesses(
   return results;
 }
 
+export interface RuntimeState {
+  instanceId: string;
+  pid: number;
+  host: string;
+  port: number;
+  mcpEndpoint: string;
+  harnesses: HarnessSyncResult[];
+  updatedAt: number;
+}
+
 export async function writeRuntimeState(
   runtimeFile: string,
-  state: {
-    pid: number;
-    host: string;
-    port: number;
-    mcpEndpoint: string;
-    harnesses: HarnessSyncResult[];
-  },
+  state: Omit<RuntimeState, "updatedAt">,
 ): Promise<void> {
   await atomicWriteFile(
     runtimeFile,
     JSON.stringify({ ...state, updatedAt: Date.now() }, null, 2) + "\n",
   );
+}
+
+export async function readRuntimeState(runtimeFile: string): Promise<RuntimeState | null> {
+  try {
+    const raw = await fsp.readFile(runtimeFile, "utf8");
+    const parsed = JSON.parse(raw) as Partial<RuntimeState>;
+    if (
+      typeof parsed.instanceId === "string" &&
+      typeof parsed.pid === "number" &&
+      typeof parsed.host === "string" &&
+      typeof parsed.port === "number"
+    ) {
+      return parsed as RuntimeState;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function removeRuntimeState(runtimeFile: string): Promise<void> {
+  try {
+    await fsp.unlink(runtimeFile);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw err;
+    }
+  }
 }

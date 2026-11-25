@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { resolveConfig, type MetaRelayConfig } from "../mcp/config.js";
-import { syncAllHarnesses } from "../mcp/harness-sync.js";
+import { readRuntimeState, syncAllHarnesses } from "../mcp/harness-sync.js";
 import { KNOWN_MCP_PRESETS, findPresetById } from "../mcp/presets.js";
 import { McpRegistry } from "../mcp/registry.js";
 import { SecretStore } from "../mcp/secrets.js";
@@ -65,14 +65,54 @@ function parseKeyValuePairs(items: string[] | undefined): Array<{
   return out;
 }
 
+function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM means the process exists but belongs to another user
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Resolves the active MetaRelay daemon URL strictly from runtime.json (single source of truth).
+ * Verifies both OS PID liveness and `/api/health` identity (`service === "metarelay"` + `instanceId`).
+ * Returns `null` whenever no verified live MetaRelay daemon is running.
+ */
+export async function resolveVerifiedBaseUrl(
+  config: MetaRelayConfig,
+  fetchImpl: typeof fetch,
+  pidCheck: (pid: number) => boolean = isPidAlive,
+): Promise<string | null> {
+  const runtime = await readRuntimeState(config.runtimeFile);
+  if (!runtime || !pidCheck(runtime.pid)) {
+    return null;
+  }
+  const candidate = `http://${runtime.host}:${runtime.port}`;
+  try {
+    const res = await fetchImpl(`${candidate}/api/health`);
+    if (res.ok) {
+      const body = (await res.json()) as { service?: string; instanceId?: string };
+      if (body.service === "metarelay" && body.instanceId === runtime.instanceId) {
+        return candidate;
+      }
+    }
+  } catch {
+    // Stale or unreachable runtime endpoint
+  }
+  return null;
+}
+
 async function tryDaemonJson<T>(
   fetchImpl: typeof fetch,
-  config: MetaRelayConfig,
+  baseUrl: string,
   pathname: string,
   init?: RequestInit,
 ): Promise<{ ok: true; data: T } | { ok: false; status?: number; error: string }> {
   try {
-    const res = await fetchImpl(`${config.baseUrl}${pathname}`, {
+    const res = await fetchImpl(`${baseUrl}${pathname}`, {
       ...init,
       headers: {
         "content-type": "application/json",
@@ -194,7 +234,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       io.stdout("Usage: metarelay status [--json]\n");
       return 0;
     }
-    const res = await tryDaemonJson<Record<string, unknown>>(fetchImpl, config, "/api/health");
+    const baseUrl = await resolveVerifiedBaseUrl(config, fetchImpl);
+    const res = baseUrl
+      ? await tryDaemonJson<Record<string, unknown>>(fetchImpl, baseUrl, "/api/health")
+      : { ok: false as const, error: "Daemon not running" };
     if (!res.ok) {
       if (parsed.values.json) {
         io.stdout(
@@ -211,7 +254,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           ) + "\n",
         );
       } else {
-        io.stdout(`MetaRelay daemon: offline (${config.baseUrl})\n`);
+        io.stdout(`MetaRelay daemon: offline\n`);
         io.stdout(`Config: ${config.repoConfigFile}\n`);
         io.stdout(`Start with: metarelay start\n`);
       }
@@ -250,13 +293,16 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       io.stdout("Usage: metarelay sync [--json]\n");
       return 0;
     }
-    const mcpUrl = `${config.baseUrl}/mcp`;
-    const apiRes = await tryDaemonJson<{ harnesses: unknown[] }>(
-      fetchImpl,
-      config,
-      "/api/harnesses/sync",
-      { method: "POST", body: "{}" },
-    );
+    const baseUrl = await resolveVerifiedBaseUrl(config, fetchImpl);
+    const mcpUrl = `${baseUrl ?? config.baseUrl}/mcp`;
+    const apiRes = baseUrl
+      ? await tryDaemonJson<{ harnesses: unknown[] }>(
+          fetchImpl,
+          baseUrl,
+          "/api/harnesses/sync",
+          { method: "POST", body: "{}" },
+        )
+      : { ok: false as const, error: "offline" };
     const harnesses = apiRes.ok ? apiRes.data.harnesses : await syncAllHarnesses(mcpUrl);
     if (parsed.values.json) {
       io.stdout(JSON.stringify({ mcpEndpoint: mcpUrl, harnesses }, null, 2) + "\n");
@@ -283,7 +329,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
 
   if (cmd === "mcp") {
-    return runMcpCommand(rest, { config, fetchImpl, openBrowser, io });
+    const baseUrl = await resolveVerifiedBaseUrl(config, fetchImpl);
+    return runMcpCommand(rest, { config, baseUrl, fetchImpl, openBrowser, io });
   }
 
   io.stderr(`Unknown command "${cmd}". Run "metarelay help" for usage.\n`);
@@ -294,12 +341,13 @@ async function runMcpCommand(
   args: string[],
   ctx: {
     config: MetaRelayConfig;
+    baseUrl: string | null;
     fetchImpl: typeof fetch;
     openBrowser: (url: string) => Promise<void>;
     io: CliIo;
   },
 ): Promise<number> {
-  const { config, fetchImpl, openBrowser, io } = ctx;
+  const { config, baseUrl, fetchImpl, openBrowser, io } = ctx;
   const [sub, ...rest] = args;
 
   if (!sub || sub === "--help" || sub === "-h") {
@@ -331,12 +379,14 @@ async function runMcpCommand(
       options: { json: { type: "boolean", default: false } },
       allowPositionals: false,
     });
-    const apiRes = await tryDaemonJson<{
-      servers: Array<{
-        config: { id: string; name: string; transport: string; enabled: boolean };
-        runtime: { status: string; toolCount: number };
-      }>;
-    }>(fetchImpl, config, "/api/mcp/servers");
+    const apiRes = baseUrl
+      ? await tryDaemonJson<{
+          servers: Array<{
+            config: { id: string; name: string; transport: string; enabled: boolean };
+            runtime: { status: string; toolCount: number };
+          }>;
+        }>(fetchImpl, baseUrl, "/api/mcp/servers")
+      : { ok: false as const, error: "offline" };
 
     if (apiRes.ok) {
       if (parsed.values.json) {
@@ -467,25 +517,25 @@ async function runMcpCommand(
       }
     }
 
-    const apiRes = await tryDaemonJson(fetchImpl, config, "/api/mcp/servers", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    if (apiRes.ok) {
-      io.stdout(`Added MCP server "${String(payload.id)}" (live daemon updated).\n`);
-      return 0;
+    if (baseUrl) {
+      const apiRes = await tryDaemonJson(fetchImpl, baseUrl, "/api/mcp/servers", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (apiRes.ok) {
+        io.stdout(`Added MCP server "${String(payload.id)}" (live daemon updated).\n`);
+        return 0;
+      }
+      io.stderr(`Failed to add server: ${apiRes.error}\n`);
+      return 1;
     }
-    // If daemon is offline (no HTTP status), write directly to servers.yaml
-    if (apiRes.status === undefined) {
-      const secrets = new SecretStore(config.secretsFile);
-      const registry = new McpRegistry(config.serversFile, secrets);
-      await registry.load();
-      await registry.upsertFromForm(payload as Parameters<McpRegistry["upsertFromForm"]>[0]);
-      io.stdout(`Added MCP server "${String(payload.id)}" to ${config.serversFile}.\n`);
-      return 0;
-    }
-    io.stderr(`Failed to add server: ${apiRes.error}\n`);
-    return 1;
+
+    const secrets = new SecretStore(config.secretsFile);
+    const registry = new McpRegistry(config.serversFile, secrets);
+    await registry.load();
+    await registry.upsertFromForm(payload as Parameters<McpRegistry["upsertFromForm"]>[0]);
+    io.stdout(`Added MCP server "${String(payload.id)}" to ${config.serversFile}.\n`);
+    return 0;
   }
 
   if (sub === "remove") {
@@ -494,30 +544,31 @@ async function runMcpCommand(
       io.stderr("Usage: metarelay mcp remove <id>\n");
       return 1;
     }
-    const apiRes = await tryDaemonJson(
-      fetchImpl,
-      config,
-      `/api/mcp/servers/${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    );
-    if (apiRes.ok) {
-      io.stdout(`Removed MCP server "${id}".\n`);
-      return 0;
-    }
-    if (apiRes.status === undefined) {
-      const secrets = new SecretStore(config.secretsFile);
-      const registry = new McpRegistry(config.serversFile, secrets);
-      await registry.load();
-      const removed = await registry.delete(id);
-      if (!removed) {
-        io.stderr(`Server "${id}" not found.\n`);
-        return 1;
+    if (baseUrl) {
+      const apiRes = await tryDaemonJson(
+        fetchImpl,
+        baseUrl,
+        `/api/mcp/servers/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      );
+      if (apiRes.ok) {
+        io.stdout(`Removed MCP server "${id}".\n`);
+        return 0;
       }
-      io.stdout(`Removed MCP server "${id}" from ${config.serversFile}.\n`);
-      return 0;
+      io.stderr(`Failed to remove server: ${apiRes.error}\n`);
+      return 1;
     }
-    io.stderr(`Failed to remove server: ${apiRes.error}\n`);
-    return 1;
+
+    const secrets = new SecretStore(config.secretsFile);
+    const registry = new McpRegistry(config.serversFile, secrets);
+    await registry.load();
+    const removed = await registry.delete(id);
+    if (!removed) {
+      io.stderr(`Server "${id}" not found.\n`);
+      return 1;
+    }
+    io.stdout(`Removed MCP server "${id}" from ${config.serversFile}.\n`);
+    return 0;
   }
 
   if (sub === "reconnect") {
@@ -526,9 +577,13 @@ async function runMcpCommand(
       io.stderr("Usage: metarelay mcp reconnect <id>\n");
       return 1;
     }
+    if (!baseUrl) {
+      io.stderr("MetaRelay daemon is not running. Start it with: metarelay start\n");
+      return 1;
+    }
     const apiRes = await tryDaemonJson(
       fetchImpl,
-      config,
+      baseUrl,
       `/api/mcp/servers/${encodeURIComponent(id)}/reconnect`,
       { method: "POST", body: "{}" },
     );
@@ -551,9 +606,13 @@ async function runMcpCommand(
       io.stderr("Usage: metarelay mcp auth <id> [--no-open]\n");
       return 1;
     }
+    if (!baseUrl) {
+      io.stderr("MetaRelay daemon is not running. Start it with: metarelay start\n");
+      return 1;
+    }
     const apiRes = await tryDaemonJson<{ authorizeUrl: string }>(
       fetchImpl,
-      config,
+      baseUrl,
       `/api/mcp/servers/${encodeURIComponent(id)}/oauth/start`,
       { method: "POST", body: "{}" },
     );

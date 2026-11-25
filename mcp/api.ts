@@ -37,6 +37,7 @@ export function mountManagementApi(
   app: FastifyInstance,
   deps: {
     config: MetaRelayConfig;
+    instanceId: string;
     registry: McpRegistry;
     upstreams: UpstreamManager;
     proxy: MetaRelayProxyServer;
@@ -44,7 +45,7 @@ export function mountManagementApi(
     syncHarnessesNow: () => Promise<HarnessSyncResult[]>;
   },
 ): void {
-  const { config, registry, upstreams, proxy, getHarnesses, syncHarnessesNow } = deps;
+  const { config, instanceId, registry, upstreams, proxy, getHarnesses, syncHarnessesNow } = deps;
 
   app.get("/api/health", async () => {
     const snapshots = await upstreams.getAllSnapshots();
@@ -53,6 +54,7 @@ export function mountManagementApi(
     return {
       ok: true,
       service: "metarelay",
+      instanceId,
       version: "0.1.0",
       mcpEndpoint: `${config.baseUrl}/mcp`,
       configFile: config.repoConfigFile,
