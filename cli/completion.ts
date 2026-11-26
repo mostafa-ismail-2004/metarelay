@@ -7,6 +7,7 @@ export const TOP_LEVEL_COMMANDS = [
   "sync",
   "mcp",
   "memory",
+  "skills",
   "completion",
   "help",
 ] as const;
@@ -22,11 +23,25 @@ export const MCP_SUBCOMMANDS = [
 
 export const MEMORY_SUBCOMMANDS = [
   "brief",
+  "templates",
   "list",
   "search",
   "read",
+  "write",
+  "delete",
   "log",
   "clear-short-term",
+] as const;
+
+export const SKILLS_SUBCOMMANDS = [
+  "list",
+  "search",
+  "load",
+  "read-file",
+  "add",
+  "write",
+  "delete",
+  "import",
 ] as const;
 
 export const SUPPORTED_SHELLS: readonly SupportedShell[] = [
@@ -66,16 +81,52 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   "mcp:reconnect": ["--help"],
   "mcp:auth": ["--no-open", "--help"],
   "memory:brief": ["--json", "--help"],
+  "memory:templates": ["--json", "--help"],
   "memory:list": ["--type", "--tag", "--json", "--help"],
   "memory:search": ["--type", "--tag", "--json", "--help"],
   "memory:read": ["--json", "--help"],
+  "memory:write": [
+    "--path",
+    "--type",
+    "--slug",
+    "--title",
+    "--summary",
+    "--tag",
+    "--body",
+    "--body-file",
+    "--updated-by",
+    "--expected-revision",
+    "--json",
+    "--help",
+  ],
+  "memory:delete": ["--expected-revision", "--help"],
   "memory:log": ["--harness", "--tag", "--help"],
   "memory:clear-short-term": ["--expected-revision", "--help"],
+  "skills:list": ["--tag", "--json", "--help"],
+  "skills:search": ["--tag", "--json", "--help"],
+  "skills:load": ["--json", "--help"],
+  "skills:read-file": ["--help"],
+  "skills:add": ["--name", "--overwrite", "--json", "--help"],
+  "skills:write": [
+    "--name",
+    "--description",
+    "--trigger",
+    "--tag",
+    "--body",
+    "--body-file",
+    "--expected-revision",
+    "--json",
+    "--help",
+  ],
+  "skills:delete": ["--help"],
+  "skills:import": ["--overwrite", "--json", "--help"],
   completion: ["--help"],
 };
 
 export interface CompletionContext {
   getServerIds: () => Promise<string[]> | string[];
+  getSkillNames?: () => Promise<string[]> | string[];
+  getMemoryPaths?: () => Promise<string[]> | string[];
 }
 
 function filterPrefix(candidates: readonly string[], prefix: string): string[] {
@@ -109,6 +160,9 @@ export async function completeArgs(
   if (prev === "--auth") {
     return filterPrefix(["oauth", "bearer", "api_key", "none"], current);
   }
+  if (prev === "--type") {
+    return filterPrefix(["profile", "decision", "lesson", "project", "review", "note"], current);
+  }
 
   // Position 0: top-level command
   if (beforeCurrent.length === 0) {
@@ -124,11 +178,35 @@ export async function completeArgs(
     return filterPrefix(COMMAND_FLAGS.completion, current);
   }
 
+  if (cmd === "skills") {
+    if (beforeCurrent.length === 1 && !current.startsWith("-")) {
+      return filterPrefix(SKILLS_SUBCOMMANDS, current);
+    }
+    const sub = beforeCurrent[1];
+    if (
+      !current.startsWith("-") &&
+      (sub === "load" || sub === "read-file" || sub === "delete") &&
+      ctx.getSkillNames
+    ) {
+      const names = await ctx.getSkillNames();
+      return filterPrefix(names, current);
+    }
+    return filterPrefix(COMMAND_FLAGS[`skills:${sub}`] ?? ["--help"], current);
+  }
+
   if (cmd === "memory") {
     if (beforeCurrent.length === 1 && !current.startsWith("-")) {
       return filterPrefix(MEMORY_SUBCOMMANDS, current);
     }
     const sub = beforeCurrent[1];
+    if (
+      !current.startsWith("-") &&
+      (sub === "read" || sub === "delete") &&
+      ctx.getMemoryPaths
+    ) {
+      const paths = await ctx.getMemoryPaths();
+      return filterPrefix(paths, current);
+    }
     return filterPrefix(COMMAND_FLAGS[`memory:${sub}`] ?? ["--help"], current);
   }
 

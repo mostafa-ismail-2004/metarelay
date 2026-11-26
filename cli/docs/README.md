@@ -13,7 +13,8 @@ The `cli/` module provides the cross-platform `metarelay` terminal workflow for 
 | `cli/commands/index.ts` | Top-level CLI router (`help`, `completion`, `__complete`, and command dispatch). |
 | `cli/commands/daemon.ts` | Daemon lifecycle commands (`start`, `status`, `sync`). |
 | `cli/commands/mcp.ts` | MCP proxy commands (`mcp list`, `presets`, `add`, `remove`, `reconnect`, `auth`). |
-| `cli/commands/memory.ts` | Shared memory commands (`memory brief`, `list`, `search`, `read`, `log`, `clear-short-term`). |
+| `cli/commands/memory.ts` | Full shared memory CLI (`brief`, `templates`, `list`, `search`, `read`, `write`, `delete`, `log`, `clear-short-term`). |
+| `cli/commands/skills.ts` | Full shared skills CLI (`list`, `search`, `load`, `read-file`, `write`, `delete`, `import`). |
 | `cli/completion.ts` | Dynamic tab-completion engine (`completeArgs`) and native script generators for `bash`, `zsh`, `fish`, and `powershell`. |
 | `cli/platform.ts` | OS-specific helpers for Linux, macOS (`darwin`), and Windows (`win32`): browser launch, shell detection, completion profile paths, and home path resolution. |
 

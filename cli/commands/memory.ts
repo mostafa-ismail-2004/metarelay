@@ -1,8 +1,14 @@
+import fsp from "node:fs/promises";
 import { parseArgs } from "node:util";
 import type { MetaRelayConfig } from "../../mcp/config.js";
-import { MemoryStore } from "../../memory/store.js";
-import type { MemoryType } from "../../memory/templates.js";
+import { MemoryConflictError, MemoryStore } from "../../memory/store.js";
+import {
+  MEMORY_TEMPLATES,
+  type LongTermMemoryType,
+  type MemoryType,
+} from "../../memory/templates.js";
 import type { CliIo } from "../client.js";
+import { formatCliError } from "../errors.js";
 
 export async function runMemoryCommand(
   args: string[],
@@ -14,8 +20,26 @@ export async function runMemoryCommand(
 
   if (!sub || sub === "--help" || sub === "-h") {
     io.stdout(
-      "Usage: metarelay memory <brief|list|search|read|log|clear-short-term> [options]\n",
+      "Usage: metarelay memory <brief|templates|list|search|read|write|delete|log|clear-short-term> [options]\n",
     );
+    return 0;
+  }
+
+  if (sub === "templates") {
+    const parsed = parseArgs({
+      args: rest,
+      options: { json: { type: "boolean", default: false } },
+      allowPositionals: false,
+    });
+    const templates = Object.values(MEMORY_TEMPLATES);
+    if (parsed.values.json) {
+      io.stdout(JSON.stringify({ templates }, null, 2) + "\n");
+      return 0;
+    }
+    for (const t of templates) {
+      const loc = t.singletonPath ?? `${t.directory}/<slug>.md`;
+      io.stdout(`${t.type.padEnd(10)} ${loc.padEnd(24)} ${t.description}\n`);
+    }
     return 0;
   }
 
@@ -125,6 +149,92 @@ export async function runMemoryCommand(
     }
     io.stdout(doc.raw);
     return 0;
+  }
+
+  if (sub === "write") {
+    const parsed = parseArgs({
+      args: rest,
+      options: {
+        path: { type: "string" },
+        type: { type: "string" },
+        slug: { type: "string" },
+        title: { type: "string" },
+        summary: { type: "string" },
+        tag: { type: "string", multiple: true },
+        body: { type: "string" },
+        "body-file": { type: "string" },
+        "updated-by": { type: "string" },
+        "expected-revision": { type: "string" },
+        json: { type: "boolean", default: false },
+        help: { type: "boolean", short: "h", default: false },
+      },
+      allowPositionals: false,
+    });
+    if (parsed.values.help) {
+      io.stdout(
+        "Usage: metarelay memory write [--path <rel.md> | --type <type> [--slug <slug>]] --title <t> --summary <s> [--body <md> | --body-file <file>] [--tag <tag>...] [--expected-revision <rev>]\n",
+      );
+      return 0;
+    }
+    if (!parsed.values.title || !parsed.values.summary) {
+      io.stderr("Missing required --title and --summary.\n");
+      return 1;
+    }
+    let body = parsed.values.body;
+    if (parsed.values["body-file"]) {
+      body = await fsp.readFile(parsed.values["body-file"], "utf8");
+    }
+    try {
+      const doc = await store.write({
+        path: parsed.values.path,
+        type: parsed.values.type as LongTermMemoryType | undefined,
+        slug: parsed.values.slug,
+        title: parsed.values.title,
+        summary: parsed.values.summary,
+        tags: parsed.values.tag,
+        body,
+        updatedBy: parsed.values["updated-by"] ?? "cli",
+        expectedRevision: parsed.values["expected-revision"],
+      });
+      if (parsed.values.json) {
+        io.stdout(JSON.stringify(doc, null, 2) + "\n");
+        return 0;
+      }
+      io.stdout(`Saved ${doc.path} (rev ${doc.revision}).\n`);
+      return 0;
+    } catch (err) {
+      if (err instanceof MemoryConflictError) {
+        io.stderr(`${err.message}\n`);
+        return 1;
+      }
+      io.stderr(`Failed to write memory: ${formatCliError(err)}\n`);
+      return 1;
+    }
+  }
+
+  if (sub === "delete") {
+    const parsed = parseArgs({
+      args: rest,
+      options: { "expected-revision": { type: "string" } },
+      allowPositionals: true,
+    });
+    const relPath = parsed.positionals[0];
+    if (!relPath) {
+      io.stderr("Usage: metarelay memory delete <path> [--expected-revision <rev>]\n");
+      return 1;
+    }
+    try {
+      const deleted = await store.delete(relPath, parsed.values["expected-revision"]);
+      if (!deleted) {
+        io.stderr(`Memory file not found: ${relPath}\n`);
+        return 1;
+      }
+      io.stdout(`Deleted ${relPath}.\n`);
+      return 0;
+    } catch (err) {
+      io.stderr(`Failed to delete memory: ${err instanceof Error ? err.message : String(err)}\n`);
+      return 1;
+    }
   }
 
   if (sub === "log") {

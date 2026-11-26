@@ -1,50 +1,39 @@
 import { resolveConfig } from "../../mcp/config.js";
 import { McpRegistry } from "../../mcp/registry.js";
 import { SecretStore } from "../../mcp/secrets.js";
+import { MemoryStore } from "../../memory/store.js";
+import { SkillStore } from "../../skills/store.js";
 import { resolveVerifiedBaseUrl, type CliIo } from "../client.js";
 import {
   SUPPORTED_SHELLS,
   completeArgs,
   generateCompletionScript,
 } from "../completion.js";
+import { formatCliError } from "../errors.js";
+import { renderHelp } from "../help.js";
 import {
   currentPlatformContext,
   detectShell,
-  getCompletionInstallHint,
   openUrlInBrowser,
   type SupportedShell,
 } from "../platform.js";
 import { runStartCommand, runStatusCommand, runSyncCommand } from "./daemon.js";
 import { runMcpCommand } from "./mcp.js";
 import { runMemoryCommand } from "./memory.js";
+import { runSkillsCommand } from "./skills.js";
 
 export { resolveVerifiedBaseUrl, type CliIo } from "../client.js";
 
-const HELP_TEXT = `MetaRelay CLI — local-first workspace & unified MCP proxy
-
-Usage:
-  metarelay <command> [options]
-
-Commands:
-  start                    Start the MetaRelay daemon (Console + /mcp + harness sync)
-  status [--json]          Check daemon health, endpoint, servers, and harnesses
-  sync [--json]            Sync the metarelay MCP URL into detected harnesses
-  mcp list [--json]        List registered MCP servers and live status
-  mcp presets [--json]     List built-in known OAuth MCP presets
-  mcp add [options]        Add a preset (--preset <id>) or custom MCP server
-  mcp remove <id>          Remove a registered MCP server
-  mcp reconnect <id>       Reconnect an upstream MCP server
-  mcp auth <id>            Start OAuth 2.1 sign-in for a server and open browser
-  memory brief [--json]    Show USER.md, short-term highlights, and long-term catalog
-  memory list [--json]     List shared memory files and summaries
-  memory search <query>    Search shared memories
-  memory read <path>       Read a shared memory file
-  memory log <text>        Append a timestamped highlight to short-term.md
-  completion [shell]       Print shell tab-completion script (bash|zsh|fish|powershell)
-  help                     Show this help message
-`;
-
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
+  try {
+    return await dispatchCli(argv, io);
+  } catch (err) {
+    io.stderr(`Error: ${formatCliError(err)}\n`);
+    return 1;
+  }
+}
+
+async function dispatchCli(argv: string[], io: CliIo): Promise<number> {
   const fetchImpl = io.fetchImpl ?? fetch;
   const platformCtx = io.platformCtx ?? currentPlatformContext();
   const openBrowser =
@@ -53,8 +42,30 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 
   const [cmd, ...rest] = argv;
 
-  if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
-    io.stdout(HELP_TEXT);
+  if (!cmd) {
+    io.stdout(renderHelp([])!);
+    return 0;
+  }
+
+  if (cmd === "help") {
+    const rendered = renderHelp(rest);
+    if (!rendered) {
+      io.stderr(`Unknown command "${rest.join(" ")}". Run "metarelay --help" for usage.\n`);
+      return 1;
+    }
+    io.stdout(rendered);
+    return 0;
+  }
+
+  // Intercept --help / -h at any depth in the command tree (except __complete)
+  if (cmd !== "__complete" && (argv.includes("--help") || argv.includes("-h"))) {
+    const pathTokens = argv.filter((token) => token !== "--help" && token !== "-h");
+    const rendered = renderHelp(pathTokens);
+    if (!rendered) {
+      io.stderr(`Unknown command "${pathTokens.join(" ")}". Run "metarelay --help" for usage.\n`);
+      return 1;
+    }
+    io.stdout(rendered);
     return 0;
   }
 
@@ -70,6 +81,24 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           return [];
         }
       },
+      getSkillNames: async () => {
+        try {
+          const store = new SkillStore(config.skillsDir);
+          const list = await store.list();
+          return list.map((s) => s.name);
+        } catch {
+          return [];
+        }
+      },
+      getMemoryPaths: async () => {
+        try {
+          const store = new MemoryStore(config.memoryDir);
+          const list = await store.list({ includeShortTerm: true });
+          return list.map((m) => m.path);
+        } catch {
+          return [];
+        }
+      },
     });
     if (completions.length > 0) {
       io.stdout(completions.join("\n") + "\n");
@@ -79,14 +108,6 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 
   if (cmd === "completion") {
     const requested = rest[0] as SupportedShell | undefined;
-    if (requested === ("--help" as unknown as SupportedShell)) {
-      const detected = detectShell(platformCtx);
-      const hint = getCompletionInstallHint(detected, platformCtx);
-      io.stdout(
-        `Usage: metarelay completion [bash|zsh|fish|powershell]\n\nDetected shell: ${detected}\nInstall:\n  ${hint.instructions}\n`,
-      );
-      return 0;
-    }
     const shell = requested ?? detectShell(platformCtx);
     if (!SUPPORTED_SHELLS.includes(shell)) {
       io.stderr(
@@ -111,8 +132,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     }
     case "memory":
       return runMemoryCommand(rest, { config, io });
+    case "skills":
+      return runSkillsCommand(rest, { config, io });
     default:
-      io.stderr(`Unknown command "${cmd}". Run "metarelay help" for usage.\n`);
+      io.stderr(`Unknown command "${cmd}". Run "metarelay --help" for usage.\n`);
       return 1;
   }
 }

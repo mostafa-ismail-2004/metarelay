@@ -1,15 +1,24 @@
 ---
 name: metarelay
-description: Use MetaRelay's shared MCP tools for cross-harness memory, decisions, lessons, reviews, and reusable workflows. Load this skill whenever starting a non-trivial task, switching harnesses, recording a decision or user correction, or running a named workflow.
+description: Use MetaRelay's shared MCP tools for cross-harness memory, skills, decisions, lessons, reviews, and reusable workflows. Load this skill whenever starting a non-trivial task, switching harnesses, recording a decision or user correction, or checking shared skills.
 ---
 
-# MetaRelay — Shared Memory & Workflows Skill
+# MetaRelay — Shared Skills & Memory Skill
 
-MetaRelay connects your local AI harnesses (Codex, Claude Code, OpenClaw, Antigravity) to one shared workspace. Always interact with shared memory and workflows through MetaRelay's MCP tools (`memory_*`, `workflow_*`) — **never** read or write `~/metarelay/` via raw shell or filesystem tools.
+MetaRelay connects your local AI harnesses (Codex, Claude Code, OpenClaw, Antigravity) to one shared workspace. Always interact with shared skills, memory, and workflows through MetaRelay's MCP tools (`skill_*`, `memory_*`, `workflow_*`) — **never** read or write `~/metarelay/` via raw shell or filesystem tools.
 
 ---
 
-## 1. Reading Shared Context
+## 1. Shared Skills (Progressive Disclosure)
+
+Skills follow 3-level Progressive Disclosure so your context stays lean:
+1. **Level 1 — Metadata**: Scan the 1-line skill catalog in MetaRelay's MCP instructions, or call `skill_list()` / `skill_search(query)` when looking for specialized procedures.
+2. **Level 2 — Full Instructions**: When a skill matches the current task, call `skill_load(name)` to read its `SKILL.md` and see any companion files (`references/`, `scripts/`).
+3. **Level 3 — Companion Files**: Only call `skill_read_file(name, path)` if `SKILL.md` points you to a specific reference or script needed for the current step.
+
+---
+
+## 2. Reading Shared Memory
 
 1. **Start of a non-trivial task, handoff, or past-work question**:
    - Call `memory_brief()` first.
@@ -23,7 +32,7 @@ MetaRelay connects your local AI harnesses (Codex, Claude Code, OpenClaw, Antigr
 
 ---
 
-## 2. Writing Shared Memory (2-Tier Model)
+## 3. Writing Shared Memory (2-Tier Model)
 
 You have full authority to write directly to **long-term** memory OR log to **short-term** memory depending on durability:
 
@@ -49,7 +58,7 @@ Use `memory_log(text, { harness, tags? })` for working highlights, intermediate 
 
 ---
 
-## 3. Metadata & Conflict-Safety Rules
+## 4. Metadata & Conflict-Safety Rules
 
 1. **Always write a crisp `summary`** (1–2 sentences) and concise `tags` in every `memory_write` call so other harnesses can decide whether to open the file from `memory_list()` alone.
 2. **Always pass `updatedBy`** with your harness name (`codex`, `claude`, `openclaw`, or `antigravity`).
@@ -59,7 +68,7 @@ Use `memory_log(text, { harness, tags? })` for working highlights, intermediate 
 
 ---
 
-## 4. Weekly Consolidation Protocol
+## 5. Weekly Consolidation Protocol
 
 When asked to consolidate short-term memory:
 1. Call `memory_read("short-term.md")` and record its exact `revision`.

@@ -283,3 +283,149 @@ test("Runtime discovery verifies live daemon port via instanceId and rejects sta
     await fs.rm(home, { recursive: true, force: true });
   }
 });
+
+test("CLI full coverage for memory and skills CRUD + live tab completion", async () => {
+  const home = await makeTempHome();
+  try {
+    // Memory write -> list -> __complete -> read -> delete
+    const memWrite = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(
+      await runCli(
+        [
+          "memory",
+          "write",
+          "--type",
+          "decision",
+          "--title",
+          "CLI Coverage",
+          "--summary",
+          "Every feature has full CLI parity.",
+          "--tag",
+          "cli",
+          "--json",
+        ],
+        memWrite.io,
+      ),
+      0,
+    );
+    const writtenMem = JSON.parse(memWrite.getOut()) as { path: string; revision: string };
+    assert.equal(writtenMem.path, "decisions/cli-coverage.md");
+
+    const memComp = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(await runCli(["__complete", "memory", "read", "dec"], memComp.io), 0);
+    assert.equal(memComp.getOut().trim(), "decisions/cli-coverage.md");
+
+    const memDel = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(
+      await runCli(
+        ["memory", "delete", writtenMem.path, "--expected-revision", writtenMem.revision],
+        memDel.io,
+      ),
+      0,
+    );
+
+    // Skills write -> __complete -> load -> delete
+    const skWrite = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(
+      await runCli(
+        [
+          "skills",
+          "write",
+          "--name",
+          "code-review",
+          "--description",
+          "Structured PR review checklist",
+          "--body",
+          "# Review\nCheck tests and edge cases.",
+        ],
+        skWrite.io,
+      ),
+      0,
+    );
+    assert.match(skWrite.getOut(), /Saved skill "code-review"/);
+
+    const skComp = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(await runCli(["__complete", "skills", "delete", "code"], skComp.io), 0);
+    assert.equal(skComp.getOut().trim(), "code-review");
+
+    const skDel = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(await runCli(["skills", "delete", "code-review"], skDel.io), 0);
+    assert.match(skDel.getOut(), /Deleted skill "code-review"/);
+
+    // Skills add from a local directory + standalone .md file
+    const extDir = await makeTempHome();
+    try {
+      const skillSrc = path.join(extDir, "triage-bot");
+      await fs.mkdir(path.join(skillSrc, "references"), { recursive: true });
+      await fs.writeFile(
+        path.join(skillSrc, "SKILL.md"),
+        "---\nname: triage-bot\ndescription: Triage incoming issues.\n---\n\nSteps here.\n",
+        "utf8",
+      );
+      await fs.writeFile(path.join(skillSrc, "references", "rules.md"), "Rule 1\n", "utf8");
+
+      const addDirCap = createCaptureIo({ configOverrides: { homeDir: home } });
+      assert.equal(await runCli(["skills", "add", skillSrc], addDirCap.io), 0);
+      assert.match(addDirCap.getOut(), /Added skill "triage-bot" \(1 companion file\(s\)\)/);
+
+      const standaloneMd = path.join(extDir, "quick-note.md");
+      await fs.writeFile(standaloneMd, "# Quick Note\nDo the thing.\n", "utf8");
+      const addMdCap = createCaptureIo({ configOverrides: { homeDir: home } });
+      assert.equal(await runCli(["skills", "add", standaloneMd], addMdCap.io), 0);
+      assert.match(addMdCap.getOut(), /Added skill "quick-note"/);
+    } finally {
+      await fs.rm(extDir, { recursive: true, force: true });
+    }
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
+test("CLI formats unknown flags, missing paths, and validation errors cleanly without throwing", async () => {
+  const home = await makeTempHome();
+  try {
+    // Unknown flag
+    const badFlag = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(await runCli(["mcp", "list", "--not-a-flag"], badFlag.io), 1);
+    assert.match(badFlag.getErr(), /Error: Unknown option '--not-a-flag'/);
+
+    // Missing path for skills add
+    const missingPath = createCaptureIo({ configOverrides: { homeDir: home } });
+    assert.equal(await runCli(["skills", "add", "/nonexistent/skill/path"], missingPath.io), 1);
+    assert.match(missingPath.getErr(), /Failed to add skill:|File or directory not found/);
+
+    // Invalid server ID / URL (Zod validation error formatted cleanly)
+    const badMcp = createCaptureIo({
+      fetchImpl: async () => {
+        throw new Error("ECONNREFUSED");
+      },
+      configOverrides: { homeDir: home },
+    });
+    assert.equal(
+      await runCli(["mcp", "add", "--id", "BAD ID!", "--url", "not-a-url"], badMcp.io),
+      1,
+    );
+    assert.match(badMcp.getErr(), /Error: Validation failed:/);
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
+test("CLI --help / -h / help works at root, command group, and subcommand levels", async () => {
+  const rootCap = createCaptureIo();
+  assert.equal(await runCli(["--help"], rootCap.io), 0);
+  assert.match(rootCap.getOut(), /Usage:\n  metarelay <command>/);
+  assert.match(rootCap.getOut(), /skills/);
+
+  const groupCap = createCaptureIo();
+  assert.equal(await runCli(["memory", "--help"], groupCap.io), 0);
+  assert.match(groupCap.getOut(), /clear-short-term/);
+
+  const leafCap = createCaptureIo();
+  assert.equal(await runCli(["skills", "add", "-h"], leafCap.io), 0);
+  assert.match(leafCap.getOut(), /metarelay skills add <path-to-folder-or-md>/);
+
+  const helpCmdCap = createCaptureIo();
+  assert.equal(await runCli(["help", "mcp", "add"], helpCmdCap.io), 0);
+  assert.match(helpCmdCap.getOut(), /--preset <id>/);
+});

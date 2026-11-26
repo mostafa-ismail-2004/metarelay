@@ -20,7 +20,7 @@
     "dev": "tsc && node dist/mcp/server.js",
     "dev:console": "npm --workspace console run dev",
     "cli": "node dist/cli/index.js",
-    "test": "tsc && node --test dist/mcp/__tests__/*.test.js dist/cli/__tests__/*.test.js dist/memory/__tests__/*.test.js"
+    "test": "tsc && node --test dist/mcp/__tests__/*.test.js dist/cli/__tests__/*.test.js dist/memory/__tests__/*.test.js dist/skills/__tests__/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
