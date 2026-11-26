@@ -13,9 +13,11 @@ metarelay/
 │   └── docs/          # Detailed MCP Proxy documentation
 ├── console/           # Web Console (Vite + React + TypeScript, Light/Dark/System)
 │   └── docs/          # Detailed Web Console documentation
-├── memory/            # Shared Markdown memory & decisions (upcoming)
-├── workflows/         # Reusable named Markdown workflows (upcoming)
-└── skills/            # Native harness bootstrap skill & sync (upcoming)
+├── memory/            # 2-tier shared Markdown memory (short-term + fixed long-term templates)
+│   └── docs/          # Detailed Memory documentation
+├── skills/            # Native harness skill (SKILL.md + global snippet)
+│   └── docs/          # Detailed Skills documentation
+└── workflows/         # Reusable named Markdown workflows (upcoming)
 ```
 
 User-authored configuration, secrets, and runtime state live under `~/metarelay/` so they survive repo upgrades.
@@ -43,4 +45,6 @@ When `harnesses.autoSyncOnStart` is enabled, starting MetaRelay automatically up
 
 - [CLI (`cli/docs/README.md`)](./cli/docs/README.md)
 - [MCP Proxy (`mcp/docs/README.md`)](./mcp/docs/README.md)
+- [Shared Memory (`memory/docs/README.md`)](./memory/docs/README.md)
+- [Native Harness Skills (`skills/docs/README.md`)](./skills/docs/README.md)
 - [Web Console (`console/docs/README.md`)](./console/docs/README.md)

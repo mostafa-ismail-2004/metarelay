@@ -37,6 +37,7 @@ export interface MetaRelayConfig {
   userConfigFile: string;
   homeDir: string;
   mcpDir: string;
+  memoryDir: string;
   serversFile: string;
   stateDir: string;
   secretsFile: string;
@@ -158,6 +159,7 @@ export function resolveConfig(overrides?: {
     true;
 
   const mcpDir = path.join(initialHome, "mcp");
+  const memoryDir = path.join(initialHome, "memory");
   const stateDir = path.join(initialHome, ".state");
 
   return {
@@ -165,6 +167,7 @@ export function resolveConfig(overrides?: {
     userConfigFile,
     homeDir: initialHome,
     mcpDir,
+    memoryDir,
     serversFile: path.join(mcpDir, "servers.yaml"),
     stateDir,
     secretsFile: path.join(stateDir, "secrets.json"),

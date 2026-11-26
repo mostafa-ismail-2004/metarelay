@@ -284,7 +284,9 @@ test("End-to-end MCP Proxy: merges stdio + remote HTTP upstreams, handles concur
 
     const listed = await clientA.listTools();
     const names = listed.tools.map((t) => t.name).sort();
-    assert.deepEqual(names, ["local-demo__echo", "local-demo__slow_op", "remote-demo__ping"]);
+    const proxiedNames = names.filter((n) => n.includes("__"));
+    assert.deepEqual(proxiedNames, ["local-demo__echo", "local-demo__slow_op", "remote-demo__ping"]);
+    assert.ok(names.includes("memory_brief"));
 
     // Fire concurrent calls from both harnesses simultaneously
     const [echoRes, pingRes, slow1, slow2] = await Promise.all([

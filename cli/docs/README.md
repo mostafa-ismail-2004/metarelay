@@ -9,7 +9,11 @@ The `cli/` module provides the cross-platform `metarelay` terminal workflow for 
 | File | Responsibility |
 | --- | --- |
 | `cli/index.ts` | Executable entrypoint (`bin.metarelay` in `package.json`). |
-| `cli/commands.ts` | Subcommand handlers (`start`, `status`, `sync`, `mcp *`, `completion`, `__complete`) using Node's built-in `util.parseArgs`. |
+| `cli/client.ts` | Shared HTTP client + verified `runtime.json` daemon discovery (`resolveVerifiedBaseUrl`). |
+| `cli/commands/index.ts` | Top-level CLI router (`help`, `completion`, `__complete`, and command dispatch). |
+| `cli/commands/daemon.ts` | Daemon lifecycle commands (`start`, `status`, `sync`). |
+| `cli/commands/mcp.ts` | MCP proxy commands (`mcp list`, `presets`, `add`, `remove`, `reconnect`, `auth`). |
+| `cli/commands/memory.ts` | Shared memory commands (`memory brief`, `list`, `search`, `read`, `log`, `clear-short-term`). |
 | `cli/completion.ts` | Dynamic tab-completion engine (`completeArgs`) and native script generators for `bash`, `zsh`, `fish`, and `powershell`. |
 | `cli/platform.ts` | OS-specific helpers for Linux, macOS (`darwin`), and Windows (`win32`): browser launch, shell detection, completion profile paths, and home path resolution. |
 

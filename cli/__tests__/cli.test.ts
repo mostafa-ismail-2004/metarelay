@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { resolveVerifiedBaseUrl, runCli } from "../commands.js";
+import { resolveVerifiedBaseUrl, runCli } from "../commands/index.js";
 import { resolveConfig } from "../../mcp/config.js";
 import { writeRuntimeState } from "../../mcp/harness-sync.js";
 import { createMetaRelayDaemon } from "../../mcp/server.js";

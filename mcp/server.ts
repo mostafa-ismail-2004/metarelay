@@ -5,6 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMcpFastifyApp } from "@modelcontextprotocol/fastify";
 import type { FastifyInstance } from "fastify";
+import { mountMemoryApi } from "../memory/api.js";
+import { createMemoryMcpProvider } from "../memory/mcp-provider.js";
+import { MemoryStore } from "../memory/store.js";
 import { mountManagementApi } from "./api.js";
 import { resolveConfig, type MetaRelayConfig } from "./config.js";
 import {
@@ -25,6 +28,7 @@ export interface MetaRelayDaemon {
   secrets: SecretStore;
   upstreams: UpstreamManager;
   proxy: MetaRelayProxyServer;
+  memory: MemoryStore;
   start(): Promise<string>;
   stop(): Promise<void>;
 }
@@ -82,6 +86,8 @@ export async function createMetaRelayDaemon(options?: {
 
   const upstreams = new UpstreamManager(config, registry, secrets);
   const proxy = new MetaRelayProxyServer(upstreams);
+  const memory = new MemoryStore(config.memoryDir);
+  proxy.registerBuiltInProvider(createMemoryMcpProvider(memory));
   const instanceId = crypto.randomUUID();
   let lastHarnessSync: HarnessSyncResult[] = [];
 
@@ -90,6 +96,7 @@ export async function createMetaRelayDaemon(options?: {
   });
 
   proxy.mount(app);
+  mountMemoryApi(app, memory);
   mountManagementApi(app, {
     config,
     instanceId,
@@ -126,6 +133,7 @@ export async function createMetaRelayDaemon(options?: {
     secrets,
     upstreams,
     proxy,
+    memory,
     async start(): Promise<string> {
       if (started) return config.baseUrl;
       const address = await app.listen({ host: config.host, port: config.port });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runCli } from "./commands.js";
+import { runCli } from "./commands/index.js";
 
 const exitCode = await runCli(process.argv.slice(2), {
   stdout: (text) => process.stdout.write(text),

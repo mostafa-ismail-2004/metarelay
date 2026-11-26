@@ -6,6 +6,7 @@ export const TOP_LEVEL_COMMANDS = [
   "status",
   "sync",
   "mcp",
+  "memory",
   "completion",
   "help",
 ] as const;
@@ -17,6 +18,15 @@ export const MCP_SUBCOMMANDS = [
   "remove",
   "reconnect",
   "auth",
+] as const;
+
+export const MEMORY_SUBCOMMANDS = [
+  "brief",
+  "list",
+  "search",
+  "read",
+  "log",
+  "clear-short-term",
 ] as const;
 
 export const SUPPORTED_SHELLS: readonly SupportedShell[] = [
@@ -55,6 +65,12 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   "mcp:remove": ["--help"],
   "mcp:reconnect": ["--help"],
   "mcp:auth": ["--no-open", "--help"],
+  "memory:brief": ["--json", "--help"],
+  "memory:list": ["--type", "--tag", "--json", "--help"],
+  "memory:search": ["--type", "--tag", "--json", "--help"],
+  "memory:read": ["--json", "--help"],
+  "memory:log": ["--harness", "--tag", "--help"],
+  "memory:clear-short-term": ["--expected-revision", "--help"],
   completion: ["--help"],
 };
 
@@ -106,6 +122,14 @@ export async function completeArgs(
       return filterPrefix(SUPPORTED_SHELLS, current);
     }
     return filterPrefix(COMMAND_FLAGS.completion, current);
+  }
+
+  if (cmd === "memory") {
+    if (beforeCurrent.length === 1 && !current.startsWith("-")) {
+      return filterPrefix(MEMORY_SUBCOMMANDS, current);
+    }
+    const sub = beforeCurrent[1];
+    return filterPrefix(COMMAND_FLAGS[`memory:${sub}`] ?? ["--help"], current);
   }
 
   if (cmd === "mcp") {
